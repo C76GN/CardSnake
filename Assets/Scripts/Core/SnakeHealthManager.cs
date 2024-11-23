@@ -1,36 +1,39 @@
-using System.Collections.Generic; // 引入使用列表所需的命名空间
+using System.Collections.Generic;
 using UnityEngine;
+using static ListExtensions;
 
-// 管理蛇的健康状态，处理蛇身体部位的损伤和恢复
+// 负责管理蛇身体各部位的健康状态，包括受伤和恢复
 public class SnakeHealthManager : MonoBehaviour
 {
-    // 存储每个身体部分的健康值
+    // 身体部位健康值列表
     private List<float> bodyPartHealth = new List<float>();
 
-    // 存储每个身体部分最近一次受到伤害的时间
+    // 每个身体部位上一次受伤的时间戳
     private List<float> lastDamageTime = new List<float>();
 
-    // 标记每个身体部分是否已经损坏
+    // 每个身体部位的损坏状态（是否已经损坏）
     private List<bool> bodyPartDamaged = new List<bool>();
 
-    // 配置文件，用于设置恢复速率和延迟等参数
+    // 配置文件，包含健康管理所需的参数
     public SnakeConfig config;
 
-    // 初始化身体部位的健康状态
+    /// <summary>
+    /// 初始化身体部位健康状态
+    /// </summary>
+    /// <param name="bodyPartCount">身体部位的数量</param>
     public void Initialize(int bodyPartCount)
     {
         if (config == null)
         {
-            Debug.LogError("SnakeConfig 未正确传递到 SnakeHealthManager！");
+            Debug.LogError("未设置 SnakeConfig，无法初始化健康管理器！");
             return;
         }
 
         if (bodyPartCount <= 0)
         {
-            // 如果身体段数量为 0，清空健康列表，并避免重复打印警告
             if (bodyPartHealth.Count > 0)
             {
-                Debug.LogWarning("身体段数量为 0，无法初始化健康列表！");
+                Debug.LogWarning("身体部位数量为 0，健康状态被清空！");
             }
             bodyPartHealth.Clear();
             lastDamageTime.Clear();
@@ -38,78 +41,73 @@ public class SnakeHealthManager : MonoBehaviour
             return;
         }
 
-        // 调整列表大小
-        AdjustListSize(bodyPartHealth, bodyPartCount, config.initialHealth);
-        AdjustListSize(lastDamageTime, bodyPartCount, 0f);
-        AdjustListSize(bodyPartDamaged, bodyPartCount, false);
+        // 调整健康相关列表的大小
+        bodyPartHealth.Resize(bodyPartCount, config.initialHealth);
+        lastDamageTime.Resize(bodyPartCount, 0f);
+        bodyPartDamaged.Resize(bodyPartCount, false);
 
-        Debug.Log($"健康列表已初始化，当前身体段数量: {bodyPartCount}, 健康列表长度: {bodyPartHealth.Count}");
+        Debug.Log($"健康状态已初始化，身体部位总数: {bodyPartCount}, 健康列表长度: {bodyPartHealth.Count}");
     }
 
-    public int PartCount
+    /// <summary>
+    /// 触发健康变化事件，通知外部模块更新状态
+    /// </summary>
+    /// <param name="index">发生变化的身体部位索引</param>
+    private void NotifyHealthChanged(int index)
     {
-        get
-        {
-            // 返回健康列表的数量
-            return bodyPartHealth.Count;
-        }
+        EventManager.TriggerEvent("OnHealthChanged", new { Index = index, Health = bodyPartHealth[index] });
     }
 
-    // 调整列表大小的通用方法
-    private void AdjustListSize<T>(List<T> list, int targetCount, T defaultValue)
-    {
-        // 如果列表当前长度不足，则添加默认值
-        while (list.Count < targetCount)
-        {
-            list.Add(defaultValue);
-        }
+    /// <summary>
+    /// 获取当前身体部位总数
+    /// </summary>
+    public int PartCount => bodyPartHealth.Count;
 
-        // 如果列表当前长度超出目标，则移除多余部分
-        while (list.Count > targetCount)
-        {
-            list.RemoveAt(list.Count - 1);
-        }
-    }
-
-    // 处理对指定身体部分造成的伤害
+    /// <summary>
+    /// 为指定的身体部位造成伤害
+    /// </summary>
+    /// <param name="index">身体部位的索引</param>
+    /// <param name="damage">造成的伤害值</param>
     public void TakeDamage(int index, float damage)
     {
-        // 检查索引是否有效，防止访问越界
         if (index < 0 || index >= bodyPartHealth.Count) return;
 
-        // 如果该身体部分已经损坏，则不再处理伤害
+        // 如果该部位已经损坏，则不再处理伤害
         if (bodyPartDamaged[index]) return;
 
-        // 减少指定身体部分的健康值
+        // 减少健康值并记录受伤时间
         bodyPartHealth[index] -= damage;
-
-        // 记录当前时间为该身体部分的最后受伤时间
         lastDamageTime[index] = Time.time;
 
-        // 如果健康值降至 0 或以下，将该部分标记为损坏
+        // 通知健康状态变化
+        NotifyHealthChanged(index);
+
+        // 如果健康值降到 0 或以下，将该部位标记为损坏
         if (bodyPartHealth[index] <= 0)
         {
-            bodyPartHealth[index] = 0;        // 确保健康值不会低于 0
-            bodyPartDamaged[index] = true;    // 标记为损坏
+            bodyPartHealth[index] = 0;
+            bodyPartDamaged[index] = true;
+            EventManager.TriggerEvent("OnBodyPartDamaged", index);
         }
 
-        Debug.Log($"身体段 {index} 受到 {damage} 点伤害，当前健康值: {bodyPartHealth[index]}");
+        Debug.Log($"身体部位 {index} 受到 {damage} 点伤害，剩余健康值: {bodyPartHealth[index]}");
     }
 
-    // 更新身体部位的健康状态（用于恢复机制）
+    /// <summary>
+    /// 更新所有身体部位的健康状态，用于处理恢复机制
+    /// </summary>
+    /// <param name="deltaTime">时间增量，用于计算恢复量</param>
     public void UpdateHealth(float deltaTime)
     {
-        // 遍历所有身体部分，检查是否需要恢复健康
         for (int i = 0; i < bodyPartHealth.Count; i++)
         {
-            // 计算实际恢复阈值
+            // 恢复阈值为初始健康值的百分比
             float actualRecoveryThreshold = config.initialHealth * config.recoveryThreshold;
 
-            // 检查是否满足恢复条件（低于恢复阈值，并且经过了恢复延迟时间）
+            // 如果健康值低于恢复阈值并且超过了恢复延迟时间，则进行恢复
             if (bodyPartHealth[i] < actualRecoveryThreshold &&
                 Time.time - lastDamageTime[i] >= config.recoveryDelay)
             {
-                // 按照恢复速率增加健康值
                 bodyPartHealth[i] += config.recoveryRate * deltaTime;
 
                 // 确保健康值不会超过恢复阈值
@@ -121,16 +119,19 @@ public class SnakeHealthManager : MonoBehaviour
         }
     }
 
-    // 获取指定身体段的健康值
+    /// <summary>
+    /// 获取指定身体部位的当前健康值
+    /// </summary>
+    /// <param name="index">身体部位的索引</param>
+    /// <returns>健康值</returns>
     public float GetHealth(int index)
     {
         if (index < 0 || index >= bodyPartHealth.Count)
         {
-            Debug.LogError($"无效的健康索引: {index}。当前健康列表长度: {bodyPartHealth.Count}");
+            Debug.LogError($"无效的身体部位索引: {index}。健康列表长度为: {bodyPartHealth.Count}");
             return 0f;
         }
 
-        Debug.Log($"获取身体段 {index} 的健康值: {bodyPartHealth[index]}");
         return bodyPartHealth[index];
     }
 }

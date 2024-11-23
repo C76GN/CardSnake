@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class CameraFollow : MonoBehaviour
+public class SnakeCameraFollow : MonoBehaviour
 {
     [Header("跟随目标设置")]
     public Transform target; // 要跟踪的目标（蛇头）
